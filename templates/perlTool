@@ -1,0 +1,67 @@
+#!/usr/bin/env perl
+
+# ==============================================================================
+# PROGRAM : ___NAME___
+# CREATOR : Kevin Olson <kolson@rent.com>
+# DESCRIPTION : <short description>
+# ==============================================================================
+=head1 NAME
+
+F<___NAME___>
+
+=head1 SYNOPSIS
+
+    ___NAME___ [opts]
+
+=head1 OPTIONS
+
+    --noaction      Will not do any updates, inserts, or deletions. If mail is
+                    an option, will not send it
+    --verbose       Print out more during execution of script 
+    --help          Print help and exit
+
+=head1 DESCRIPTION
+
+Long detailed description of what is going on in the tool
+
+=head1 EXAMPLES
+
+    ___NAME___
+
+=head1 AUTHOR
+
+Kevin Olson <kolson@rent.com>
+
+=cut
+
+# ==============================================================================
+
+use strict;
+use warnings;
+
+use feature qw(say);
+
+use Company::Program (
+    options => {
+        verbose => undef,
+    }
+);
+use Pod::Usage;
+
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Name: main()
+# Input: none
+# Return: none
+# Description: The main function of <___NAME___>
+# ------------------------------------------------------------------------------
+sub main {
+
+
+    return;
+}
+
+# ==============================================================================
+
+main();

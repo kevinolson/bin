@@ -1,0 +1,23 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+
+my $verbose;
+
+GetOptions( verbose => \$verbose);
+
+die "You must provide a http path" if (!@ARGV);
+
+#my $cmd = "wget --spider -S '$ARGV[0]' 2>&1";
+my $cmd = "curl -IL '$ARGV[0]' ";
+
+if (!$verbose) {
+ #$cmd .= "| grep 'HTTP/' | awk '{print \$2}'";
+ $cmd .= "| grep 'HTTP/'";
+}
+
+print "cmd: $cmd\n" if($verbose);
+print `$cmd`;

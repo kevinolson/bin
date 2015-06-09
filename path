@@ -1,0 +1,52 @@
+#!/usr/bin/env perl
+
+# ==============================================================================
+
+use strict;
+use warnings;
+
+use Cwd qw(abs_path);
+use Getopt::Long;
+
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Name: main()
+# Input: none
+# Return: none
+# Description: The main function of <path>
+# ------------------------------------------------------------------------------
+
+sub main {
+
+    my $cwd = Cwd::cwd();
+
+    # Print my current location if I am not looking for others
+    if ( !@ARGV ) {
+        print "$cwd\n";
+    }
+
+    # Go over each thing passed and confirm it exists, then pass it along
+    foreach my $arg (@ARGV) {
+        if ( $arg !~ m#^([.][.]|/)# ) {
+            if ( -e $arg ) {
+                print "$cwd/$arg\n";
+            }
+            elsif ( $arg =~ m#[*]# ) {
+                print "$cwd/$arg\n";
+            }
+            else {
+                print "$arg\n";
+            }
+        }
+        else {
+            if ( -e $arg ) {
+                print abs_path($arg) . "\n";
+            }
+        }
+    }
+}
+
+# ==============================================================================
+
+main();

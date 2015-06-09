@@ -1,0 +1,39 @@
+#!/usr/bin/env python
+# =============================================================================
+# Tool: ___NAME___
+# Contacts: kolson@rent.com
+# =============================================================================
+""""___NAME___
+
+<Complete tool description.  Remember, this is end-user documentation so the
+description should be clear, readable and comprehensive.  Make sure that it
+contains enough information for the user to understand what the tool does if
+they've never seen or used it before.  Give the tool some context, too.>
+"""
+
+import argparse
+
+
+# -----------------------------------------------------------------------------
+#    Name: main()
+#    Args: none
+# Returns: none
+#    Desc: Main function.
+# -----------------------------------------------------------------------------
+def main():
+    parser = argparse.ArgumentParser()
+
+    # Define options/arguments using parser.add_argument() calls here.
+
+    # rh.argument is based on the argparse module.  For more information, see:
+    # http://docs.python.org/library/argparse.html or
+    # pydoc argparse
+
+    arguments = parser.parse_args()
+
+    return 
+
+# =============================================================================
+if '__main__' == __name__:
+    main()
+

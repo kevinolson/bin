@@ -1,0 +1,265 @@
+#!/usr/bin/env perl
+
+# ==============================================================================
+# PROGRAM     : saveit
+# CREATOR     : Kevin Olson <kolson@rent.com>
+# DESCRIPTION : creates a saved file in bak/ directory
+# ==============================================================================
+
+=head1 NAME
+
+F<saveit>
+
+=head1 SYNOPSIS
+
+    saveit [opts]
+
+=head1 OPTIONS
+
+    --debug         Debug mode
+    --help          Print help and exit
+
+=head1 DESCRIPTION
+
+F<saveit> is a tool that allows you to create a quick saved file. What saveit
+does is create a directory called "bak/" in the location of the file. Then it
+will compress ( tar and gzip ) up the file and append a four digit number to
+the name.
+
+F<saveit> will not overwrite a file if it already exists, but simply increment
+up the four digit number. F<saveit> only works on files, and does not work on
+directories.
+
+Currently F<saveit> does not have an option to traverse through directories
+and save the files in there.
+
+=head1 EXAMPLES
+
+    saveit foobar
+
+=head1 AUTHOR
+
+Kevin Olson <kolson@rent.com>
+
+=cut
+
+# ==============================================================================
+
+use strict;
+use warnings;
+
+use Archive::Tar;
+use Cwd qw(abs_path);
+use File::Basename;
+use File::Copy;
+use File::Path;
+use Getopt::Long;
+use Pod::Usage;
+
+# ==============================================================================
+
+my %DIR_CACHE;
+
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Name: _create_tar()
+# Input: $file - path to the file to tar
+#        $name - the new name of the tar file ( includes 4 padded # )
+#        $dir  - the full directory path to the "bak/" area
+# Return: none
+# Description: This method will tar up into the "bak/" area
+# ------------------------------------------------------------------------------
+sub _create_tar {
+    my ( $file, $name, $dir ) = @_;
+
+    # Copy the file to new area
+    my $new_name = "$dir/$name";
+    copy( $file, $new_name );
+    chdir $dir;
+
+    # Create the new tar object
+    my $tar = Archive::Tar->new();
+
+    # Add the file to the tar
+    $tar->add_files($name);
+
+    # Finish and write out the tar file. The name should include the number to
+    # increment
+    $tar->write( "$dir/$name.tar.gz", COMPRESS_GZIP );
+
+    unlink $name;
+
+    return;
+}
+
+# ------------------------------------------------------------------------------
+# Name: _find_like_files
+# Input: $name - the name of the file
+#        $dir  - the full directory path to the "bak/" area
+# Return: \@like_files - an array ref of files that match $name
+# Description: This method will first see if we have cached results for the
+# files in the "bak/" area. If not then it will populate the cache with the
+# files and then find files that match "$name[.]\d{4}.tar.gz"
+# ------------------------------------------------------------------------------
+sub _find_like_files {
+    my ( $name, $dir ) = @_;
+
+    my $files;
+
+    # Use the cache or populate the cache so we can limit the opendir calls.
+    if ( !exists $DIR_CACHE{$dir} ) {
+        opendir my $fh, $dir or die "Failed to open dir [$dir]: $!\n";
+        my @files = grep { $_ !~ m/^[.]/ } readdir $fh;
+        closedir $fh or die "Failed to close dir [$dir]: $!\n";
+
+        $DIR_CACHE{$dir} = \@files;
+    }
+
+    my @like_files =
+      grep { $_ =~ m/^$name[.]\d{4}.tar.gz/ } @{ $DIR_CACHE{$dir} };
+
+    return \@like_files;
+}
+
+# ------------------------------------------------------------------------------
+# Name: _parse_args()
+# Input: none
+# Return: $args - a hash of the arguments parsed
+# Description: The method for parsing all of the users arguments and ensuring
+#              that they are usuable.
+# ------------------------------------------------------------------------------
+sub _parse_args {
+
+    my ( $help, $debug );
+
+    if (
+        !GetOptions(
+            'help'  => \$help,
+            'debug' => \$debug,
+        )
+      )
+    {
+        pod2usage(
+            -exitval => 2,
+            -verbose => 1,
+        );
+    }
+
+    # Print out the POD information
+    pod2usage( -verbose => 2 ) if ($help);
+
+    my @files = @ARGV;
+
+    if ( !@files ) {
+        print "ERROR: You must provide a file\n\n";
+        pod2usage(
+            -exitval => 2,
+            -verbose => 1,
+        );
+    }
+
+    # We want to make sure we have good files to process and report the bad
+    # files that are not going to work so the user knows what the script did.
+    my @badFiles = grep { !-e $_ || -d $_ } @files;
+    my @goodFiles = map { abs_path($_) }
+      grep { -e $_ && !-d $_ } @files;
+    my $bad = join ',', @badFiles;
+
+    if ( !@goodFiles ) {
+        print "\n";
+        print "ERROR: Could not determine any files with valid paths:\n";
+        print "  [$bad]\n\n";
+        exit 2;
+    }
+
+    return {
+        bad   => $bad,
+        files => \@goodFiles,
+    };
+}
+
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Name: main()
+# Input: none
+# Return: none
+# Description: The main function of <saveit>
+# ------------------------------------------------------------------------------
+sub main {
+
+    my $args = _parse_args();
+
+    my $bad   = $args->{bad};
+    my $files = $args->{files};
+
+    # Report to the user what files are bad and what it is working on
+    if ($bad) {
+        print "\n";
+        print '-' x 50 . "\n";
+        print " WARNING : Skipping files listed below:\n";
+        print "   [$bad]\n";
+        print '-' x 50 . "\n";
+        print "\n";
+    }
+
+    # 1. Check to see if there is "bak/" directory
+    # 1a. If not then create the directory and back up the file
+    # 2. If "bak/" directory then see if the file has been saved and grab
+    # the latest instance of the file
+    # 3. Find the latest instance and then increment up one as the new
+    # name and back up the file
+    foreach my $file ( @{$files} ) {
+        my $dirname  = dirname($file);
+        my $basename = basename($file);
+
+        my $bak_path = "$dirname/bak";
+
+        # If this never existed we can wrap this up quickly
+        if ( !-e $bak_path ) {
+            print "\n";
+            print "Creating directory path [$bak_path]...";
+            eval { mkpath($bak_path) };
+            die "Failed to create path [$bak_path]: $@\n" if ($@);
+            print "done\n\n";
+
+            my $name = "$basename.0001";
+            print "backing up [$basename] to [$name]...";
+            _create_tar( $file, $name, $bak_path );
+
+            print "done\n";
+            next;
+        }
+
+        my $like_files = _find_like_files( $basename, $bak_path );
+
+        if ( !@{$like_files} ) {
+            my $name = "$basename.0001";
+            print "backing up [$basename] to [$name]...";
+            _create_tar( $file, $name, $bak_path );
+            print "done\n";
+
+            next;
+        }
+
+        my @sorted_files = reverse( sort @{$like_files} );
+        my $last_file    = shift @sorted_files;
+
+        my ($counter) = $last_file =~ m/^$basename[.](\d{4}).tar.gz/;
+        my $new_counter = sprintf '%04d', $counter + 1;
+
+        my $name = "$basename.$new_counter";
+        print "backing up [$basename] to [$name]...";
+        _create_tar( $file, $name, $bak_path );
+        print "done\n";
+    }
+
+    print "\n";
+
+    return;
+}
+
+# ==============================================================================
+
+main();

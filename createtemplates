@@ -1,0 +1,342 @@
+#!/usr/bin/env perl
+
+# ==============================================================================
+# PROGRAM : createtemplates
+# CREATOR : Kevin Olson <kolson@rent.com>
+# DESCRIPTION : A tool to bring in a template and quickly create a tool/module
+# ==============================================================================
+
+=head1 NAME
+
+F<createtemplate> - quickly create a tool or package using a template
+
+=head1 SYNOPSIS
+
+    createtemplates [opts]
+
+=head1 OPTIONS
+
+    --code          The code language you want to use, limits all templates
+    --name          The name of the file you want to call it
+    --template      What template you want to use
+    --novim         Does not open the file in vim but prints out the file name
+    --help          Print out the help man page for the tool, and exits
+
+=head1 DESCRIPTION
+
+F<createtemplate> is a tool that will allow the user to pick a template to use to setup
+a basic file for working. By default if no template is provided F<createtemplate> will
+list the available templates.
+
+List of default templates, so you do not always have to type the template name:
+
+ csh    => cshTool.csh
+ html   => index.html
+ perl   => perlBasicTool
+ python => pythonBasicTool
+
+=head1 EXAMPLES
+
+    createtemplates                            # Prints out all templates names
+    createtemplates foo.pl -template perlTool  # Creates foo.pl using
+    createtemplates -code perl                 # Shows only perl templates
+    createtemplates foobar -code perl          # Uses the code default template
+
+=head1 AUTHOR
+
+Kevin Olson <kolson@rent.com>
+
+=cut
+
+# ==============================================================================
+use strict;
+use warnings;
+
+use File::Basename;
+use File::Copy;
+use File::Path;
+use File::Temp qw( tempfile );
+use Getopt::Long;
+use Pod::Usage;
+
+# ==============================================================================
+
+my %DEFAULT_CODE_TEMPLATE = (
+    'csh'  => { tool => 'cshTool.csh' },
+    'html' => { tool => 'index.html' },
+    'perl' => {
+        tool   => 'perlBasicTool',
+        module => 'perlModule',
+    },
+    'python' => {
+        tool   => 'pythonBasicTool',
+        module => 'pythonModule',
+    },
+);
+
+# ==============================================================================
+# ------------------------------------------------------------------------------
+# Name: _createFile()
+# Input: $name - name of file
+#        $template - template name to source
+#        $module - potential module path
+# Return: none
+# Description: The method for creating the file
+# ------------------------------------------------------------------------------
+sub _createFile {
+    my ( $name, $template, $module ) = @_;
+
+    # Get all of the lines from the template
+    open my $tp, qw{<}, $template or die "Failed to open $template: $!\n";
+    my @lines = <$tp>;
+    close $tp or die "Failed to close $template: $!\n";
+
+    # Get our temp filehandler to write to
+    my ( $fh, $filename ) = tempfile();
+
+    foreach my $line (@lines) {
+
+        # Replace the line if it matches the pattern
+        if ( $line =~ m/___NAME___/ ) {
+            $line =~ s/___NAME___/$name/;
+        }
+
+        # Print the result to the temp file
+        print $fh $line;
+    }
+
+    # Close our filehandler
+    close $fh or die "Failed to close temp file: $!\n";
+
+    # Template suffix
+    my $suffix;
+    ($suffix) = $template =~ m/[.](\w+)$/;
+
+    # If we have a module then we have some more work to do
+    if ( $template =~ m/module/i ) {
+
+        # Does the module have a directory that doesn't exists, if so then we
+        # we need to create it
+        my $dirname = dirname($module);
+
+        if ( $dirname !~ m/[.]/ ) {
+            if ( !-e $dirname ) {
+                eval { mkpath($dirname) };
+                print "Failed to create [$dirname] : $@\n" if ($@);
+            }
+        }
+
+        # If we create a python module then we will need to create an
+        # empty  __init__.py file per directory we created for python to
+        # understand the path properly
+        if ( $template =~ m#/python# ) {
+            my @dirs = split '/', $dirname;
+
+            # An anonymous function to create init files for python
+            my $create_init = sub {
+                my ($dir) = @_;
+                my $init = "$dir/__init__.py";
+                if ( !-e $init ) {
+                    open my $fh, ">", $init or die "Cannot open $init: $!";
+                    close $fh or die "Cannot close $init: $!";
+                }
+            };
+
+            my $base_dir = '';
+            foreach my $dir (@dirs) {
+
+                $base_dir .= "$dir/";
+                &$create_init($base_dir);
+            }
+        }
+
+        # Include the suffix of the template if it exists
+        if ($suffix) {
+            $module .= ".$suffix";
+            $name = $module;
+        }
+
+        copy( $filename, $module );
+    }
+    else {
+
+        # Include the suffix of the template if it exists
+        if ($suffix) {
+            $name .= ".$suffix";
+        }
+
+        copy( $filename, $name );
+        chmod 0775, $name;
+    }
+
+    return $name;
+}
+
+sub _find_template {
+    my ( $name, $code, $default_template ) = @_;
+
+    my $template;
+
+    # Logic to figure out if a module or tool
+    if ( $code eq 'perl' && $name =~ m/::/ ) {
+        $template = $default_template->{module};
+    }
+    elsif ( $code eq 'python' && $name =~ m/[.]/ ) {
+        $template = $default_template->{module};
+    }
+    else {
+        $template = $default_template->{tool};
+    }
+
+    return $template;
+}
+
+# ------------------------------------------------------------------------------
+# Name: _parseArgs()
+# Input: none
+# Return: $args - a hash of the arguments parsed
+# Description: The method for parsing all of the users arguments and ensuring
+#              that they are usable.
+# ------------------------------------------------------------------------------
+sub _parseArgs {
+    my ( $template, $help, $code, $novim );
+
+    if (
+        !GetOptions(
+            'code:s'     => \$code,
+            'template:s' => \$template,
+            'novim'      => \$novim,
+            'help'       => \$help,
+        )
+      )
+    {
+        pod2usage(
+            -exitval => 2,
+            -verbose => 1,
+        );
+    }
+
+    # Print out the POD information
+    pod2usage( -verbose => 2 ) if ($help);
+
+    my $name = $ARGV[0] ? $ARGV[0] : undef;
+
+    # Our default template directory
+    my $tempDir = "$ENV{HOME}/dev/templates";
+
+    # Verify that our tempDir does exist
+    if ( !-e $tempDir ) {
+        die "$tempDir does not exists, something horribly happened!\n";
+    }
+
+    # Get our templates
+    opendir my $fh, $tempDir or die "Failed to open [$tempDir]: $!\n";
+    my @templates = grep { !-d "$tempDir/$_" } readdir $fh;
+    closedir $fh or die "Failed to close [$tempDir]: $!\n";
+
+    # Default the template based on the code information
+    if ( $name && $code && !$template && exists $DEFAULT_CODE_TEMPLATE{$code} )
+    {
+        $template =
+          _find_template( $name, $code, $DEFAULT_CODE_TEMPLATE{$code} );
+    }
+
+    # If we do not have a name and template then print out the templates
+    if ( !$name || !$template ) {
+        print "\n";
+        print "Available Templates:\n";
+        if ($code) {
+            my @match = grep { $_ =~ m/^$code/i } @templates;
+            if ( !@match ) {
+                print "\nERROR: Code [$code] does not match any templates\n";
+            }
+            else {
+                @templates = @match;
+            }
+            print " $_\n" foreach ( sort @templates );
+        }
+        else {
+            print " $_\n" foreach ( sort @templates );
+        }
+        print "\n";
+        exit 1;
+    }
+    else {
+
+        # We need to verify that the we are give a valid template
+        my @match = grep { $_ =~ m/^$template/i } @templates;
+        if ( @match == 1 ) {
+            $template = $match[0];
+        }
+        else {
+            print "\n";
+            if ( @match > 1 ) {
+                print "ERROR: Template [$template] name not unique enough\n";
+            }
+            else {
+                print "ERROR: Template [$template] did not match\n";
+            }
+            print " $_\n" foreach ( sort @templates );
+            print "\n";
+            exit 1;
+        }
+    }
+
+    return {
+        code     => $code,
+        name     => $name,
+        novim    => $novim,
+        template => "$tempDir/$template",
+    };
+
+}
+
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Name: main()
+# Input: none
+# Return: none
+# Description: The main function of <createtemplate>
+# ------------------------------------------------------------------------------
+sub main {
+
+    # Get all of our information
+    my $args = _parseArgs();
+
+    my $name     = $args->{name};
+    my $novim    = $args->{novim};
+    my $template = $args->{template};
+
+    # If template has module in the name we need to append the name
+    my $module = $name;
+
+    # Special treatment of modules
+    if ( $template =~ m/module/i ) {
+        if ( $template =~ m#/perl#i ) {
+
+            # Convert the '::' to a path '/'
+            $module =~ s#::#/#g;
+        }
+        elsif ( $template =~ m#/python#i ) {
+
+            # Converts the '.' to a path '/'
+            $module =~ s#[.]#/#g;
+        }
+    }
+
+    # Create our file
+    my $file = _createFile( $name, $template, $module );
+
+    if ( !$novim ) {
+        my $cmd = "vim $file";
+        system $cmd;
+    }
+    else {
+        print "Created file: $file\n";
+    }
+}
+
+# ==============================================================================
+
+main();

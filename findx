@@ -1,0 +1,80 @@
+#!/usr/bin/env perl
+
+# ==============================================================================
+
+use strict;
+use warnings;
+
+use feature qw(say);
+
+use Getopt::Long;
+use List::MoreUtils qw(uniq);
+use Log::Log4perl qw(:easy);
+
+Log::Log4perl->easy_init($ERROR);
+
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Name: main()
+# Input: none
+# Return: none
+# Description: The main function of <findx>
+# ------------------------------------------------------------------------------
+sub main {
+
+    my $first;
+
+    GetOptions( 'first' => \$first );
+
+    # My generic search function
+    my $search = sub {
+        my ( $file, $paths ) = @_;
+
+        # Find most everything
+        my @files = map { "$_/$file" }
+                    grep { -e "$_/$file" && ! -d "$_/$file" } @{$paths};
+
+        my @python = map { "$_/$file/__init__.py" }
+                     grep { -e "$_/$file/__init__.py" } @{$paths};
+
+        my @return;
+        push @return, @files if (@files);
+        push @return, @python if (@python);
+
+        return @return;
+    };  
+
+    foreach my $file (@ARGV) {
+        # For perl packages
+        if ( $file =~ m/::/ ) {
+            # For perl packages
+            $file =~ s#::#/#g;
+            $file .= '.pm';
+        }
+        elsif ( $file =~ m/[.]py/ ) {
+            # For python packages
+            $file =~ s#[.]#/#g;
+            # Fix any files that ended in .py that are now /py
+            $file =~ s#/py$#.py#;
+
+            $file .= '.py' if ( $file !~ m/[.]py$/ );
+        }
+
+
+        # Check environment paths location
+        my @paths = split /:/, $ENV{PATH};
+        my @python = split /:/, $ENV{PYTHONPATH} if ($ENV{PYTHONPATH});
+        my @found = $search->( $file, [@paths, @INC, @python ] );
+
+        return if ( ! @found );
+
+        my @uniq = uniq(@found);
+        @uniq = shift @uniq if ($first);
+        say "$_" foreach (@uniq);
+    }
+}
+
+# ==============================================================================
+
+main();
